@@ -1,5 +1,6 @@
 import socket
 import json
+import random
 
 class rdt_UDP():
 
@@ -42,6 +43,28 @@ class rdt_UDP():
 
             while True:
                 self.socket.sendto(string_msg.encode('utf-8'), (IP_address, port))
+
+
+                # --- START OF INJECTED TESTS ---
+
+                #test_msg = msg.copy() 
+                
+                # ----- To test corruption, uncomment ONE of these lines: -------
+
+                #test_msg = self.simulate_false_checksum(test_msg)
+                #test_msg = self.simulate_packet_corruption(test_msg)
+                
+                #string_msg_to_send = json.dumps(test_msg)
+
+                # -----To test loss, it only sends if the function returns False (not lost)------
+
+                #if not self.simulate_packet_loss(0.3):
+                #    self.socket.sendto(string_msg_to_send.encode('utf-8'), (IP_address, port))
+
+                # --- END OF INJECTED TESTS ---
+
+
+
                 try:
                     ack, addr = self.socket.recvfrom(1024)
                     if self.isACK(ack, self.seq_num):
@@ -165,14 +188,18 @@ class rdt_UDP():
 
         bin_data = self.text_to_bin(packet["data"])
         recalculated = self.find_checksum(bin_data, 8)
-        
+
         if packet["checksum"] == recalculated:
             return False  # not corrupted
         else:
             return True   # corrupted
         
-    # convert text to binary string
+   # convert text to binary string
     def text_to_bin(self, text):
+        # Handle empty strings (like in SYN, SYNACK, FIN, ACK)
+        if text == "":
+            return "0" * 32
+            
         binary = ''.join(format(ord(c), '08b') for c in text)
         # pad to multiple of 32 bits (4 x 8-bit chunks)
         while len(binary) % 32 != 0:
@@ -224,3 +251,26 @@ class rdt_UDP():
 
         # if all 1s → no corruption
         return receiver_checksum == '1' * k
+    
+    def bind(self, IP_address, port):
+        self.socket.bind((IP_address, port))
+
+    def simulate_packet_loss(self, probability):
+        # returns True if packet should be dropped
+        if random.random() < probability:
+            print("Packet lost!")
+            return True
+        else:
+            return False
+
+    def simulate_packet_corruption(self, packet):
+        # flips data to garbage
+        packet["data"] = "00000000" * 4
+        print("Packet corrupted!")
+        return packet
+
+    def simulate_false_checksum(self, packet):
+        # replaces checksum with wrong value
+        packet["checksum"] = "00000000"
+        print("False checksum injected!")
+        return packet
