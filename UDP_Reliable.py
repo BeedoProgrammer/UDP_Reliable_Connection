@@ -1,5 +1,6 @@
 import socket
 import json
+import random
 
 class rdt_UDP():
 
@@ -42,6 +43,28 @@ class rdt_UDP():
 
             while True:
                 self.socket.sendto(string_msg.encode('utf-8'), (IP_address, port))
+
+
+                # --- START OF INJECTED TESTS ---
+
+                #test_msg = msg.copy() 
+                
+                # ----- To test corruption, uncomment ONE of these lines: -------
+
+                #test_msg = self.simulate_false_checksum(test_msg)
+                #test_msg = self.simulate_packet_corruption(test_msg)
+                
+                #string_msg_to_send = json.dumps(test_msg)
+
+                # -----To test loss, it only sends if the function returns False (not lost)------
+
+                #if not self.simulate_packet_loss(0.3):
+                #    self.socket.sendto(string_msg_to_send.encode('utf-8'), (IP_address, port))
+
+                # --- END OF INJECTED TESTS ---
+
+
+
                 try:
                     ack, addr = self.socket.recvfrom(1024)
                     if self.isACK(ack, self.seq_num):
@@ -68,8 +91,79 @@ class rdt_UDP():
                 except socket.timeout:
                     print("FIN timeout, resending...")
 
-    def rdt_rcv(self, received_packet, IP_address, port):
-        pass
+    def rdt_rcv(self):
+        # --- Step 1: Receive SYN, send SYNACK ---
+        while True:
+            try:
+                data, addr = self.socket.recvfrom(1024)
+                packet = json.loads(data.decode('utf-8'))
+
+                # drop corrupted packets
+                if self.is_corrupt(data):
+                    print("Corrupt packet dropped")
+                    continue
+
+                if packet["flags"] == rdt_UDP.SYN:
+                    # send SYNACK back
+                    bin_data = self.text_to_bin("")
+                    checksum = self.find_checksum(bin_data, 8)
+                    msg = self.make_pckt(self.seq_num, "", checksum, flags=rdt_UDP.SYNACK)
+                    self.socket.sendto(json.dumps(msg).encode('utf-8'), addr)
+                    self.state = "OPEN"
+                    self.seq_num += 1
+                    break
+
+            except socket.timeout:
+                print("Waiting for SYN...")
+
+        # --- Step 2: Receive data, send ACK ---
+        while True:
+            try:
+                data, addr = self.socket.recvfrom(1024)
+                packet = json.loads(data.decode('utf-8'))
+
+                if self.is_corrupt(data):
+                    print("Corrupt packet dropped")
+                    continue
+
+                if packet["flags"] == rdt_UDP.ACK:
+                    received_data = packet["data"]  # actual data is here
+                    # send ACK back
+                    bin_data = self.text_to_bin("")
+                    checksum = self.find_checksum(bin_data, 8)
+                    msg = self.make_pckt(self.seq_num, "", checksum, 
+                                        flags=rdt_UDP.ACK)
+                    self.socket.sendto(json.dumps(msg).encode('utf-8'), addr)
+                    self.seq_num += 1
+                    break
+
+            except socket.timeout:
+                print("Waiting for data...")
+
+        # --- Step 3: Receive FIN, send ACK ---
+        while True:
+            try:
+                data, addr = self.socket.recvfrom(1024)
+                packet = json.loads(data.decode('utf-8'))
+
+                if self.is_corrupt(data):
+                    print("Corrupt packet dropped")
+                    continue
+
+                if packet["flags"] == rdt_UDP.FIN:
+                    # send ACK back to close
+                    bin_data = self.text_to_bin("")
+                    checksum = self.find_checksum(bin_data, 8)
+                    msg = self.make_pckt(self.seq_num, "", checksum, flags=rdt_UDP.ACK)
+                    self.socket.sendto(json.dumps(msg).encode('utf-8'), addr)
+                    self.state = "CLOSED"
+                    self.seq_num += 1
+                    break
+
+            except socket.timeout:
+                print("Waiting for FIN...")
+
+        return received_data
 
     def make_pckt(self, seq_num, data, checksum, flags):
         packet = {
@@ -81,13 +175,31 @@ class rdt_UDP():
         return packet
 
     def isACK(self, received_packet, seq_num):
-        pass
+        packet = json.loads(received_packet.decode('utf-8'))
+
+        is_ack_flag = (packet["flags"] == rdt_UDP.ACK or packet["flags"] == rdt_UDP.SYNACK)
+        if is_ack_flag and packet["seq"] == seq_num:
+            return True
+        else:
+            return False
 
     def is_corrupt(self, received_packet):
-        pass
+        packet = json.loads(received_packet.decode('utf-8'))
 
-    # convert text to binary string
+        bin_data = self.text_to_bin(packet["data"])
+        recalculated = self.find_checksum(bin_data, 8)
+
+        if packet["checksum"] == recalculated:
+            return False  # not corrupted
+        else:
+            return True   # corrupted
+        
+   # convert text to binary string
     def text_to_bin(self, text):
+        # Handle empty strings (like in SYN, SYNACK, FIN, ACK)
+        if text == "":
+            return "0" * 32
+            
         binary = ''.join(format(ord(c), '08b') for c in text)
         # pad to multiple of 32 bits (4 x 8-bit chunks)
         while len(binary) % 32 != 0:
@@ -139,3 +251,26 @@ class rdt_UDP():
 
         # if all 1s → no corruption
         return receiver_checksum == '1' * k
+    
+    def bind(self, IP_address, port):
+        self.socket.bind((IP_address, port))
+
+    def simulate_packet_loss(self, probability):
+        # returns True if packet should be dropped
+        if random.random() < probability:
+            print("Packet lost!")
+            return True
+        else:
+            return False
+
+    def simulate_packet_corruption(self, packet):
+        # flips data to garbage
+        packet["data"] = "00000000" * 4
+        print("Packet corrupted!")
+        return packet
+
+    def simulate_false_checksum(self, packet):
+        # replaces checksum with wrong value
+        packet["checksum"] = "00000000"
+        print("False checksum injected!")
+        return packet
