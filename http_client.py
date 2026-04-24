@@ -1,5 +1,5 @@
 from UDP_Reliable import rdt_UDP
-
+import time
 class http_client:
     def __init__(self):
         self.rdt_UDP = rdt_UDP()
@@ -10,6 +10,7 @@ class http_client:
         self.connect_to_server()
     
     def get(self, host, port, path):
+        self.rdt_UDP.reset()
         self.build_get_request(host, path)
         self.rdt_UDP.rdt_send(self.request, host, port) # send request to server
         raw_response, _ = self.rdt_UDP.rdt_rcv() # get server response
@@ -18,12 +19,13 @@ class http_client:
         print(f"Response Body: {self.response}")
 
     def post(self, host, port, path, body):
+        self.rdt_UDP.reset()
         self.build_post_request(host, path, body)
         self.rdt_UDP.rdt_send(self.request, host, port) # send request to server
         raw_response, _ = self.rdt_UDP.rdt_rcv() # get server response
         status_code, status_msg = self.parse_response(raw_response)
         print(f"Status Code: {status_code}, Status Message: {status_msg}")
-        print(f"{self.response}")
+        print(f"Response Body: {self.response}")
 
     def connect_to_server(self):
         self.rdt_UDP.bind(self.client_ip, self.client_port)
@@ -55,6 +57,20 @@ class http_client:
     
 
 client = http_client()
-client.get("127.0.0.1", 5555, "/index.html")
 
-# client.post("127.0.0.1", 5555, "/test2.txt", "hello world")
+# gets
+client.get("127.0.0.1", 5555, "/index.html")
+time.sleep(1)
+client.get("127.0.0.1", 5555, "/missing.html")
+time.sleep(1)
+client.get("127.0.0.1", 5555, "../../illegal.html")
+time.sleep(1)
+# posts
+client.post("127.0.0.1", 5555, "/test1.txt", "hello world")
+time.sleep(1)
+client.post("127.0.0.1", 5555, "/test2.txt", "hello world")
+time.sleep(1)
+# gets
+client.get("127.0.0.1", 5555, "/test1.html")
+time.sleep(1)
+client.get("127.0.0.1", 5555, "/test1.html")
