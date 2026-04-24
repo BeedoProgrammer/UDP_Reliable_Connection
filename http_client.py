@@ -71,6 +71,6 @@ time.sleep(1)
 client.post("127.0.0.1", 5555, "/test2.txt", "hello world")
 time.sleep(1)
 # gets
-client.get("127.0.0.1", 5555, "/test1.html")
+client.get("127.0.0.1", 5555, "/test1.txt")
 time.sleep(1)
-client.get("127.0.0.1", 5555, "/test1.html")
+client.get("127.0.0.1", 5555, "/test1.txt")
