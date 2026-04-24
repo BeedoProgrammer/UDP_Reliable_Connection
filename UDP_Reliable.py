@@ -163,7 +163,7 @@ class rdt_UDP():
             except socket.timeout:
                 print("Waiting for FIN...")
 
-        return received_data
+        return received_data, addr # return address as well so server can send responses to it
 
     def make_pckt(self, seq_num, data, checksum, flags):
         packet = {
@@ -274,3 +274,6 @@ class rdt_UDP():
         packet["checksum"] = "00000000"
         print("False checksum injected!")
         return packet
+    def reset(self): # to start a new connection, reset seq_num and state
+        self.seq_num = 0
+        self.state = "CLOSED" # redundant but just to be safe
